@@ -8,6 +8,7 @@ members = [
   "contracts/staking/*",
   "contracts/test/*",
   "contracts/voting/*",
+  "contracts/cw4-stake",
   "packages/*",
   "ci/*",
 ]

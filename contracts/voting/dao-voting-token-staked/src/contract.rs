@@ -2,8 +2,9 @@
 use cosmwasm_std::entry_point;
 
 use cosmwasm_std::{
-    coins, from_json, to_json_binary, BankMsg, BankQuery, Binary, Coin, CosmosMsg, Deps, DepsMut,
-    Env, MessageInfo, Order, Reply, Response, StdResult, SubMsg, Uint128, Uint256, WasmMsg,
+    coins, ensure, ensure_eq, from_json, to_json_binary, BankMsg, BankQuery, Binary, Coin,
+    CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order, Reply, Response, StdError, StdResult,
+    SubMsg, Uint128, Uint256, WasmMsg,
 };
 use cw2::{get_contract_version, set_contract_version, ContractVersion};
 use cw_controllers::ClaimsResponse;
@@ -175,6 +176,28 @@ pub fn execute(
         }
         ExecuteMsg::AddHook { addr } => execute_add_hook(deps, env, info, addr),
         ExecuteMsg::RemoveHook { addr } => execute_remove_hook(deps, env, info, addr),
+        ExecuteMsg::MigrateStakes { weights } => {
+            let mut sum = Uint128::zero();
+            let len = weights.len();
+            for (staker, weight) in weights {
+                STAKED_BALANCES.save(deps.storage, &staker, &weight, env.block.height)?;
+                sum += weight;
+            }
+
+            let total = STAKED_TOTAL.load(deps.storage)? + sum;
+            STAKED_TOTAL.save(deps.storage, &total, env.block.height)?;
+
+            let received = must_pay(&info, &DENOM.load(deps.storage)?)?;
+            ensure_eq!(
+                received,
+                sum,
+                StdError::generic_err("Mismatch in received stakes")
+            );
+
+            Ok(Response::new()
+                .add_attribute("action", "migrate_stakes")
+                .add_attribute("migrated_items", len.to_string()))
+        }
     }
 }
 

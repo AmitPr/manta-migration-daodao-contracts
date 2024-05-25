@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Binary, Uint128};
+use cosmwasm_std::{Addr, Binary, Uint128};
 use cw_utils::Duration;
 use dao_dao_macros::{active_query, native_token_query, voting_module_query};
 use dao_interface::token::NewTokenInfo;
@@ -55,6 +55,8 @@ pub enum ExecuteMsg {
     AddHook { addr: String },
     /// Removes a hook that fires on staking / unstaking
     RemoveHook { addr: String },
+    /// Migrates stakes from the legacy MantaDAO contract.
+    MigrateStakes { weights: Vec<(Addr, Uint128)> },
 }
 
 #[native_token_query]
