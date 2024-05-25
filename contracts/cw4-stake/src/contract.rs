@@ -1,16 +1,13 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    coins, to_json_binary, wasm_execute, Addr, BankMsg, Binary, Deps, DepsMut, Empty, Env,
-    MessageInfo, Order, Response, StdResult, Storage, SubMsg, Uint128,
+    coins, to_json_binary, wasm_execute, BankMsg, Binary, Deps, DepsMut, Empty, Env, MessageInfo,
+    Order, Response, StdResult, SubMsg, Uint128,
 };
 
 use cw2::set_contract_version;
 use cw20::Denom;
-use cw4::{
-    Member, MemberChangedHookMsg, MemberDiff, MemberListResponse, MemberResponse,
-    TotalWeightResponse,
-};
+use cw4::{Member, MemberListResponse, MemberResponse, TotalWeightResponse};
 use cw_storage_plus::Bound;
 use cw_utils::{maybe_addr, NativeBalance};
 use kujira::CallbackData;
@@ -113,50 +110,6 @@ pub fn must_pay_funds(balance: &NativeBalance, denom: &str) -> Result<Uint128, C
             }
         }
         _ => Err(ContractError::ExtraDenoms(denom.to_string())),
-    }
-}
-
-fn update_membership(
-    storage: &mut dyn Storage,
-    sender: Addr,
-    new_stake: Uint128,
-    cfg: &Config,
-    height: u64,
-) -> StdResult<Vec<SubMsg>> {
-    // update their membership weight
-    let new = calc_weight(new_stake, cfg);
-    let old = MEMBERS.may_load(storage, &sender)?;
-
-    // short-circuit if no change
-    if new == old {
-        return Ok(vec![]);
-    }
-    // otherwise, record change of weight
-    match new.as_ref() {
-        Some(w) => MEMBERS.save(storage, &sender, w, height),
-        None => MEMBERS.remove(storage, &sender, height),
-    }?;
-
-    // update total
-    TOTAL.update(storage, |total| -> StdResult<_> {
-        Ok(total + new.unwrap_or_default() - old.unwrap_or_default())
-    })?;
-
-    // alert the hooks
-    let diff = MemberDiff::new(sender, old, new);
-    HOOKS.prepare_hooks(storage, |h| {
-        MemberChangedHookMsg::one(diff.clone())
-            .into_cosmos_msg(h)
-            .map(SubMsg::new)
-    })
-}
-
-fn calc_weight(stake: Uint128, cfg: &Config) -> Option<u64> {
-    if stake < cfg.min_bond {
-        None
-    } else {
-        let w = stake.u128() / (cfg.tokens_per_weight.u128());
-        Some(w as u64)
     }
 }
 

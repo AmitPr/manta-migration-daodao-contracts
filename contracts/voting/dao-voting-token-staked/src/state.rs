@@ -54,3 +54,6 @@ pub const TOKEN_INSTANTIATION_INFO: Item<TokenInfo> = Item::new("token_instantia
 
 /// The address of the cw-tokenfactory-issuer contract
 pub const TOKEN_ISSUER_CONTRACT: Item<Addr> = Item::new("token_issuer_contract");
+
+/// Address of the MantaDAO legacy contract
+pub const MANTA_DAO: Item<Addr> = Item::new("manta_dao");

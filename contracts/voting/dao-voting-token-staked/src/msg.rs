@@ -83,7 +83,9 @@ pub enum QueryMsg {
 }
 
 #[cw_serde]
-pub struct MigrateMsg {}
+pub struct MigrateMsg {
+    pub manta_dao_addr: Addr,
+}
 
 #[cw_serde]
 pub struct ListStakersResponse {

@@ -2,9 +2,9 @@
 use cosmwasm_std::entry_point;
 
 use cosmwasm_std::{
-    coins, ensure, ensure_eq, from_json, to_json_binary, BankMsg, BankQuery, Binary, Coin,
-    CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order, Reply, Response, StdError, StdResult,
-    SubMsg, Uint128, Uint256, WasmMsg,
+    coins, ensure_eq, from_json, to_json_binary, BankMsg, BankQuery, Binary, Coin, CosmosMsg, Deps,
+    DepsMut, Env, MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Uint128,
+    Uint256, WasmMsg,
 };
 use cw2::{get_contract_version, set_contract_version, ContractVersion};
 use cw_controllers::ClaimsResponse;
@@ -35,7 +35,6 @@ use dao_voting::{
     },
 };
 
-use crate::error::ContractError;
 use crate::msg::{
     ExecuteMsg, GetHooksResponse, InstantiateMsg, ListStakersResponse, MigrateMsg, QueryMsg,
     StakerBalanceResponse, TokenInfo,
@@ -44,6 +43,7 @@ use crate::state::{
     Config, ACTIVE_THRESHOLD, CLAIMS, CONFIG, DAO, DENOM, HOOKS, MAX_CLAIMS, STAKED_BALANCES,
     STAKED_TOTAL, TOKEN_INSTANTIATION_INFO, TOKEN_ISSUER_CONTRACT,
 };
+use crate::{error::ContractError, state::MANTA_DAO};
 
 pub(crate) const CONTRACT_NAME: &str = "crates.io:dao-voting-token-staked";
 pub(crate) const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -177,6 +177,11 @@ pub fn execute(
         ExecuteMsg::AddHook { addr } => execute_add_hook(deps, env, info, addr),
         ExecuteMsg::RemoveHook { addr } => execute_remove_hook(deps, env, info, addr),
         ExecuteMsg::MigrateStakes { weights } => {
+            ensure_eq!(
+                info.sender,
+                MANTA_DAO.load(deps.storage)?,
+                ContractError::Unauthorized {}
+            );
             let mut sum = Uint128::zero();
             let len = weights.len();
             for (staker, weight) in weights {
@@ -580,8 +585,10 @@ pub fn query_hooks(deps: Deps) -> StdResult<GetHooksResponse> {
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> Result<Response, ContractError> {
     let storage_version: ContractVersion = get_contract_version(deps.storage)?;
+
+    MANTA_DAO.save(deps.storage, &msg.manta_dao_addr)?;
 
     // Only migrate if newer
     if storage_version.version.as_str() < CONTRACT_VERSION {
