@@ -184,12 +184,15 @@ pub fn execute(
             );
             let mut sum = Uint128::zero();
             let len = weights.len();
+            let mut msgs = vec![];
             for (staker, weight) in weights {
                 STAKED_BALANCES.save(deps.storage, &staker, &weight, env.block.height)?;
                 sum += weight;
+
+                msgs.extend(stake_hook_msgs(HOOKS, deps.storage, staker, weight)?);
             }
 
-            let total = STAKED_TOTAL.load(deps.storage)? + sum;
+            let total = STAKED_TOTAL.may_load(deps.storage)?.unwrap_or_default() + sum;
             STAKED_TOTAL.save(deps.storage, &total, env.block.height)?;
 
             let received = must_pay(&info, &DENOM.load(deps.storage)?)?;
@@ -201,7 +204,8 @@ pub fn execute(
 
             Ok(Response::new()
                 .add_attribute("action", "migrate_stakes")
-                .add_attribute("migrated_items", len.to_string()))
+                .add_attribute("migrated_items", len.to_string())
+                .add_submessages(msgs))
         }
     }
 }

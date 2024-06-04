@@ -65,19 +65,23 @@ pub fn execute(
     match msg {
         ExecuteMsg::MigrateToDaoDao { num } => {
             let config = CONFIG.load(deps.storage)?;
-            let iter = MEMBERS.range(deps.storage, None, None, Order::Ascending);
+            let iter = STAKE.range(deps.storage, None, None, Order::Ascending);
             let items = iter
                 .map(|r| r.map(|(addr, weight)| (addr, weight.into())))
                 .take(num as usize)
                 .collect::<StdResult<Vec<_>>>()?;
             // remove all members
             let mut sum = Uint128::zero();
+            let mut weight_sum = 0u64;
             for (addr, weight) in &items {
+                STAKE.remove(deps.storage, addr);
+                let vote_weight = MEMBERS.may_load(deps.storage, addr)?.unwrap_or_default();
                 MEMBERS.remove(deps.storage, addr, env.block.height)?;
-                sum -= weight;
+                sum += weight;
+                weight_sum += vote_weight;
             }
-            let total = Uint128::from(TOTAL.load(deps.storage)?) - sum;
-            TOTAL.save(deps.storage, &total.u128().try_into().unwrap())?;
+            let total = TOTAL.load(deps.storage)? - weight_sum;
+            TOTAL.save(deps.storage, &total)?;
 
             let msg = dao_voting_token_staked::msg::ExecuteMsg::MigrateStakes { weights: items };
 
