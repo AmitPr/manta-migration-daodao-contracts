@@ -1,16 +1,16 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    coins, to_json_binary, wasm_execute, BankMsg, Binary, Deps, DepsMut, Empty, Env, MessageInfo,
-    Order, Response, StdResult, SubMsg, Uint128,
+    coins, to_json_binary, wasm_execute, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Order,
+    Response, StdResult, Uint128,
 };
 
 use cw2::set_contract_version;
 use cw20::Denom;
 use cw4::{Member, MemberListResponse, MemberResponse, TotalWeightResponse};
-use cw_storage_plus::Bound;
+use cw_controllers::Claim;
+use cw_storage_plus::{Bound, Map};
 use cw_utils::{maybe_addr, NativeBalance};
-use kujira::CallbackData;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, StakedResponse};
@@ -59,21 +59,18 @@ pub fn instantiate(
 pub fn execute(
     deps: DepsMut,
     env: Env,
-    info: MessageInfo,
+    _info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::MigrateToDaoDao { num } => {
+        ExecuteMsg::MigrateToDaoDao { num, num_claims } => {
             let config = CONFIG.load(deps.storage)?;
             let iter = STAKE.range(deps.storage, None, None, Order::Ascending);
-            let items = iter
-                .map(|r| r.map(|(addr, weight)| (addr, weight.into())))
-                .take(num as usize)
-                .collect::<StdResult<Vec<_>>>()?;
+            let weights = iter.take(num as usize).collect::<StdResult<Vec<_>>>()?;
             // remove all members
             let mut sum = Uint128::zero();
             let mut weight_sum = 0u64;
-            for (addr, weight) in &items {
+            for (addr, weight) in &weights {
                 STAKE.remove(deps.storage, addr);
                 let vote_weight = MEMBERS.may_load(deps.storage, addr)?.unwrap_or_default();
                 MEMBERS.remove(deps.storage, addr, env.block.height)?;
@@ -83,7 +80,19 @@ pub fn execute(
             let total = TOTAL.load(deps.storage)? - weight_sum;
             TOTAL.save(deps.storage, &total)?;
 
-            let msg = dao_voting_token_staked::msg::ExecuteMsg::MigrateStakes { weights: items };
+            // Also migrate claims
+            let claims_map: Map<Addr, Vec<Claim>> = Map::new("claims");
+            let iter = claims_map.range(deps.storage, None, None, Order::Ascending);
+            let claims = iter
+                .take(num_claims as usize)
+                .collect::<StdResult<Vec<_>>>()?;
+
+            for (addr, claims) in &claims {
+                claims.iter().for_each(|c| sum += c.amount);
+                claims_map.remove(deps.storage, addr.clone());
+            }
+
+            let msg = dao_voting_token_staked::msg::ExecuteMsg::MigrateStakes { weights, claims };
 
             let denom = if let Denom::Native(denom) = &config.denom {
                 denom.as_str()
@@ -97,7 +106,6 @@ pub fn execute(
                 .add_message(execute)
                 .add_attribute("action", "migrate"))
         }
-        ExecuteMsg::Claim { callback } => execute_claim(deps, env, info, callback),
     }
 }
 
@@ -115,43 +123,6 @@ pub fn must_pay_funds(balance: &NativeBalance, denom: &str) -> Result<Uint128, C
         }
         _ => Err(ContractError::ExtraDenoms(denom.to_string())),
     }
-}
-
-pub fn execute_claim(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    callback: Option<CallbackData>,
-) -> Result<Response, ContractError> {
-    let release = CLAIMS.claim_tokens(deps.storage, &info.sender, &env.block, None)?;
-    if release.is_zero() {
-        return Err(ContractError::NothingToClaim {});
-    }
-
-    let config = CONFIG.load(deps.storage)?;
-    let (amount_str, message) = match &config.denom {
-        Denom::Native(denom) => {
-            let amount_str = coin_to_string(release, denom.as_str());
-            let amount = coins(release.u128(), denom);
-            let msg = match callback {
-                None => BankMsg::Send {
-                    to_address: info.sender.to_string(),
-                    amount,
-                }
-                .into(),
-                Some(cb) => cb.to_message(&info.sender, Empty {}, amount)?,
-            };
-            let message = SubMsg::new(msg);
-            (amount_str, message)
-        }
-        Denom::Cw20(_) => unreachable!("CW20 not supported on Kujira"),
-    };
-
-    Ok(Response::new()
-        .add_submessage(message)
-        .add_attribute("action", "claim")
-        .add_attribute("tokens", amount_str)
-        .add_attribute("sender", info.sender))
 }
 
 #[inline]

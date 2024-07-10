@@ -27,11 +27,8 @@ pub struct MigrateMsg {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    /// Claim remains to allow users to claim tokens that were unbonding as-of 3 weeks before the migration date.
-    Claim { callback: Option<CallbackData> },
-
     /// Migrates a batch of user stakes to DAO DAO.
-    MigrateToDaoDao { num: u64 },
+    MigrateToDaoDao { num: u64, num_claims: u64 },
 }
 
 #[cw_serde]

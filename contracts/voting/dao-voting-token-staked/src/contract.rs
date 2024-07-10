@@ -2,13 +2,13 @@
 use cosmwasm_std::entry_point;
 
 use cosmwasm_std::{
-    coins, ensure_eq, from_json, to_json_binary, BankMsg, BankQuery, Binary, Coin, CosmosMsg, Deps,
-    DepsMut, Env, MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Uint128,
+    coins, ensure_eq, from_json, to_json_binary, Addr, BankMsg, BankQuery, Binary, Coin, CosmosMsg,
+    Deps, DepsMut, Env, MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Uint128,
     Uint256, WasmMsg,
 };
 use cw2::{get_contract_version, set_contract_version, ContractVersion};
-use cw_controllers::ClaimsResponse;
-use cw_storage_plus::Bound;
+use cw_controllers::{Claim, ClaimsResponse};
+use cw_storage_plus::{Bound, Map};
 use cw_tokenfactory_issuer::msg::{
     ExecuteMsg as IssuerExecuteMsg, InstantiateMsg as IssuerInstantiateMsg,
 };
@@ -176,7 +176,7 @@ pub fn execute(
         }
         ExecuteMsg::AddHook { addr } => execute_add_hook(deps, env, info, addr),
         ExecuteMsg::RemoveHook { addr } => execute_remove_hook(deps, env, info, addr),
-        ExecuteMsg::MigrateStakes { weights } => {
+        ExecuteMsg::MigrateStakes { weights, claims } => {
             ensure_eq!(
                 info.sender,
                 MANTA_DAO.load(deps.storage)?,
@@ -194,6 +194,12 @@ pub fn execute(
 
             let total = STAKED_TOTAL.may_load(deps.storage)?.unwrap_or_default() + sum;
             STAKED_TOTAL.save(deps.storage, &total, env.block.height)?;
+
+            let claims_map: Map<Addr, Vec<Claim>> = Map::new("claims");
+            for (staker, claim) in claims {
+                claims_map.save(deps.storage, staker, &claim)?;
+                claim.iter().for_each(|c| sum += c.amount);
+            }
 
             let received = must_pay(&info, &DENOM.load(deps.storage)?)?;
             ensure_eq!(
