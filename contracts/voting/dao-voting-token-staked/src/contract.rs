@@ -399,8 +399,15 @@ pub fn execute_add_hook(
     info: MessageInfo,
     addr: String,
 ) -> Result<Response, ContractError> {
+    let contract_info = deps
+        .querier
+        .query_wasm_contract_info(_env.contract.address)?;
     let dao = DAO.load(deps.storage)?;
-    if info.sender != dao {
+    if info.sender != dao
+        && contract_info
+            .admin
+            .map_or(true, |admin| admin != info.sender)
+    {
         return Err(ContractError::Unauthorized {});
     }
 
@@ -417,8 +424,15 @@ pub fn execute_remove_hook(
     info: MessageInfo,
     addr: String,
 ) -> Result<Response, ContractError> {
+    let contract_info = deps
+        .querier
+        .query_wasm_contract_info(_env.contract.address)?;
     let dao = DAO.load(deps.storage)?;
-    if info.sender != dao {
+    if info.sender != dao
+        && contract_info
+            .admin
+            .map_or(true, |admin| admin != info.sender)
+    {
         return Err(ContractError::Unauthorized {});
     }
 
